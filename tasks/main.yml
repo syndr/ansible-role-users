@@ -1,0 +1,104 @@
+---
+# tasks file for users
+
+- name: Load ansible environment vars
+  ansible.builtin.setup:
+    filter:
+      - ansible_user_id
+
+- name: Make the users 👌
+  become: true
+  block:
+    - name: User group exists
+      ansible.builtin.group:
+        name: "{{ item.group | default(item.username) }}"
+      when: item.state | default('present') == 'present'
+      loop: "{{ server_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Warn about currently logged on user
+      ansible.builtin.debug:
+          msg: ⚠ Not removing user {{ item.username }} because we are currently running as that user!
+      when: 'ansible_user_id == item.username and item.state == "absent"'
+      loop: "{{ server_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Configure user account (no password)
+      ansible.builtin.user:
+        name: "{{ item.username }}"
+        password_lock: true
+        state: "{{ item.state }}"
+      when: 'not (ansible_user_id == item.username and item.state == "absent") and not item.password is defined'
+      loop: "{{ server_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Configure user account (password)
+      ansible.builtin.user:
+        name: "{{ item.username }}"
+        password: "{{ item.password }}"
+        state: "{{ item.state }}"
+      when: 'not (ansible_user_id == item.username and item.state == "absent") and item.password is defined'
+      loop: "{{ server_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Configure user account (all)
+      ansible.builtin.user:
+        name: "{{ item.username }}"
+        group: "{{ item.group | default(item.username) }}"
+        shell: "{{ item.shell | default('/bin/bash') }}"
+        state: "{{ item.state | default('present') }}"
+      when: 'not (ansible_user_id == item.username and item.state == "absent")'
+      loop: "{{ server_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Remove requested user groups
+      ansible.builtin.group:
+        name: "{{ item.username }}"
+        state: absent
+      when: item.state | default('present') == 'absent' and not ansible_user_id == item.username
+      loop: "{{ server_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    - name: Add ssh keys for logon
+      block:
+        - name: User .ssh directory exists
+          ansible.builtin.file:
+            path: "/home/{{ item.username }}/.ssh"
+            state: directory
+            mode: 0700
+            owner: "{{ item.username }}"
+            group: "{{ item.group | default(item.username) }}"
+          when: 'item.state == "present"'
+          loop: "{{ server_users }}"
+          loop_control:
+            label: "{{ item.username }}"
+
+        - name: User ssh key(s) are installed
+          ansible.posix.authorized_key:
+            user: "{{ item.username }}"
+            key: "{{ item.ssh_keys | join('\n') }}"
+            state: present
+            exclusive: true
+          when: 'item.state == "present"'
+          loop: "{{ server_users }}"
+          loop_control:
+            label: "{{ item.username }}"
+      when: item.ssh_keys is defined
+
+    - name: User has sudo access (all commands)
+      ansible.builtin.template:
+        src: templates/etc/sudoers.d/50-user.j2
+        dest: /etc/sudoers.d/50-{{ server_target_user.username }}-all
+      when: 'server_target_user.admin | default(false) is truthy and server_target_user.state | default("present") == "present"'
+      loop: "{{ server_users }}"
+      loop_control:
+        loop_var: server_target_user
+        label: "{{ server_target_user.username }}"
+
+
