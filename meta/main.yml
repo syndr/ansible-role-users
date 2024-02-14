@@ -1,6 +1,7 @@
 galaxy_info:
   author: syndr
-  description: creature
+  role_name: users
+  description: Configure host system user accounts
   company: UltronCORE
 
   # If the issue tracker for your role is not on github, uncomment the
