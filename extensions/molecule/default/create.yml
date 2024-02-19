@@ -51,9 +51,9 @@
       loop_control:
         label: "{{ item.name }}"
 
-    - name: Dump env
-      ansible.builtin.debug:
-        var: hostvars
+    #- name: Dump env
+    #  ansible.builtin.debug:
+    #    var: hostvars
 
     - name: Write instance_config file
       ansible.builtin.copy:

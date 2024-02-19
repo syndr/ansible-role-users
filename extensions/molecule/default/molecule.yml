@@ -1,9 +1,7 @@
 ---
-role_name_check: 1
+role_name_check: ${MOLECULE_ROLE_NAME_CHECK:-0}
 dependency:
   name: galaxy
-  options:
-    ignore-errors: true
 driver:
   name: default
   options:
@@ -29,6 +27,4 @@ provisioner:
   config_options:
     defaults:
       gathering: explicit
-      roles_path: ../../../
-      collections_path: ../../../
 
