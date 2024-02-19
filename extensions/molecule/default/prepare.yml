@@ -1,0 +1,49 @@
+---
+
+- name: Prepare for execution
+  hosts: localhost
+  gather_facts: false
+  vars:
+    project_dir: "{{ molecule_scenario_directory.split('/')[:-3] | join('/') }}"
+  tasks:
+    - name: Project directory is
+      ansible.builtin.debug:
+        var: project_dir
+
+    - name: Load super important role info
+      block:
+        - name: Load meta file
+          ansible.builtin.include_vars:
+            file: "{{ project_dir }}/meta/main.yml"
+            name: project_meta
+
+        - name: Role name is defined
+          ansible.builtin.assert:
+            that:
+              - project_meta.galaxy_info.role_name is defined
+            fail_msg: This configuration requires the role_name meta variable to be defined!
+      rescue:
+        - name: Configuration load error
+          ansible.builtin.fail:
+            msg: Error loading role meta information! This molecule configuration is meant to be run from the extensions/ subdirectory of your role directory!
+
+    - name: Create roles directory
+      ansible.builtin.file:
+        path: "{{ molecule_ephemeral_directory }}/roles"
+        state: directory
+        mode: 0755
+
+    - name: Copy project directory to temporary role path
+      vars:
+        destination_dir: "{{ molecule_ephemeral_directory }}/roles/{{ project_meta.galaxy_info.role_name }}"
+      block:
+        - name: Temporary role directory does not exist
+          ansible.builtin.file:
+            path: "{{ destination_dir }}"
+            state: absent
+
+        # Use shell command because copy module is slow
+        - name: Copy project directory to temporary role path
+          ansible.builtin.command:
+            cmd: 'cp -r "{{ project_dir }}" "{{ destination_dir }}"'
+
