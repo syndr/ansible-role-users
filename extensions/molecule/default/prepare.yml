@@ -33,17 +33,23 @@
         state: directory
         mode: 0755
 
-    - name: Copy project directory to temporary role path
-      vars:
-        destination_dir: "{{ molecule_ephemeral_directory }}/roles/{{ project_meta.galaxy_info.role_name }}"
-      block:
-        - name: Temporary role directory does not exist
-          ansible.builtin.file:
-            path: "{{ destination_dir }}"
-            state: absent
+    #- name: Copy project directory to temporary role path
+    #  vars:
+    #    destination_dir: "{{ molecule_ephemeral_directory }}/roles/{{ project_meta.galaxy_info.role_name }}"
+    #  block:
+    #    - name: Temporary role directory does not exist
+    #      ansible.builtin.file:
+    #        path: "{{ destination_dir }}"
+    #        state: absent
 
-        # Use shell command because copy module is slow
-        - name: Copy project directory to temporary role path
-          ansible.builtin.command:
-            cmd: 'cp -r "{{ project_dir }}" "{{ destination_dir }}"'
+    #    # Use shell command because copy module is slow
+    #    - name: Copy project directory to temporary role path
+    #      ansible.builtin.command:
+    #        cmd: 'cp -r "{{ project_dir }}" "{{ destination_dir }}"'
+
+    - name: Link current repository to roles working directory
+      ansible.builtin.file:
+        src: "{{ project_dir }}"
+        dest: "{{ molecule_ephemeral_directory }}/roles/{{ project_meta.galaxy_info.role_name }}"
+        state: link
 
