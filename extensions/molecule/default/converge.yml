@@ -14,11 +14,6 @@
 
 - name: Converge
   hosts: molecule
-  # We disable gather facts because it would fail due to our container not
-  # having python installed. This will not prevent use from running 'raw'
-  # commands. Most molecule users are expected to use containers that already
-  # have python installed in order to avoid notable delays installing it.
-  gather_facts: false
   tasks:
     - name: Check uname
       ansible.builtin.raw: uname -a
@@ -40,7 +35,7 @@
             password: $5$M8PNjsAxVb2QqRzN$jH7YgbvE/4kO7SRBCPYDP69OJV0aDQVMoig8aKoLAfD
           - username: testuser
             state: present
-            ssh_keys:
+            ssh_keys:   # TODO: Replace this ssh key with one that's dynamically generated!
               - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC6enYRSK7kBwD+KHU1OVBpHjz3iRA5DW4PPacZmRHxvxJ2H2gRVnqB38hgEbm1LkPOjI1b/S5kMGI4gMeHWe4CUFYoyVcyMyyDPNdGArDZErz5cGoMEE/9319p5O6lTLWh7omrR2cAEMU8mQ3zfvPxk2OvzGaG834tfu0POpGk5xIj0cqxyUQn7vy1GSu+E0aMql/jK0HahSSMdqk4B8x1dHhvpd17ZYA37NMjUBuhc7vClxoufxkjKxAIoLL/Tx79H2CoQ9OtE/u/Z5X9t3NLdy1+wuSgV+TD7ib1cHnGtCQ4/8625l/2rVRnU/jfApRTrkrv1Fhu1H5p6eKEwjJQ29CEUKFeQLM1NluIJVWWhLXTg3ec0MHOrAr8I/bZECeNB5qRZTfQSfkcXjqfNGoVVoXIqCGIFY6ULQqd9OoGYrBpOG/LfH2Ly5P9aHAHoZZ+dEi8QcRYqPyQmqg815v/dvMDeN5Ohr8sCHOR2TcnE6Hj7IcTm0yo8gKMl1hLCuc= testuser@molecule"
 
     - name: Test user authentication
@@ -60,11 +55,36 @@
             msg: "{{ testadmin_login_result.stdout }}"
         - name: Attempt ssh login with key
           block:
-            - name: Openssh is installed
+            - name: Install openssh
               become: true
-              ansible.builtin.package:
-                name: openssh-clients
-                state: present
+              block:
+                - name: Network tools are installed
+                  ansible.builtin.package:
+                    name:
+                      - iputils
+                      - bind-utils
+                    state: present
+
+                - name: Openssh is installed
+                  ansible.builtin.package:
+                    name:
+                      - openssh-clients
+                      - openssh-server
+                    state: present
+
+                - name: Set openssh port
+                  ansible.builtin.copy:
+                    content: |
+                      Port 2022
+                    dest: /etc/ssh/sshd_config.d/90-port.conf
+                    owner: root
+                    group: root
+                    mode: 0644
+
+                - name: SSH Server is running
+                  ansible.builtin.systemd_service:
+                    name: sshd
+                    state: started
 
             - name: SSH key exists on host
               ansible.builtin.copy:
@@ -74,7 +94,7 @@
 
             - name: Attempt ssh login
               ansible.builtin.command:
-                cmd: ssh -i /tmp/testuser testuser@localhost 'echo success'
+                cmd: ssh -i /tmp/testuser -o StrictHostKeyChecking=no -p 2022 testuser@localhost 'echo success'
               register: testuser_ssh_result
               changed_when: false
 

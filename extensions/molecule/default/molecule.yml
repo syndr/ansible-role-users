@@ -27,4 +27,5 @@ provisioner:
   config_options:
     defaults:
       gathering: explicit
+      vault_password_file: ~/.ansible/molecule-ci.pw
 
