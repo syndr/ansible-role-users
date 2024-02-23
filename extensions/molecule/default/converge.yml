@@ -2,7 +2,7 @@
 - name: Fail if molecule group is missing
   hosts: localhost
   tasks:
-    - name: Print some info
+    - name: Print host inventory groups
       ansible.builtin.debug:
         msg: "{{ groups }}"
 
@@ -20,9 +20,27 @@
       register: result
       changed_when: false
 
-    - name: Print some info
+    - name: Verify kernel type
       ansible.builtin.assert:
         that: result.stdout | regex_search("^Linux")
+
+    - name: Do preparation
+      block:
+        - name: Load local host facts
+          ansible.builtin.setup:
+            gather_subset:
+              - '!all'
+              - '!min'
+              - local
+
+        - name: Show local Ansible facts
+          ansible.builtin.debug:
+            var: ansible_facts.ansible_local
+            verbosity: 1
+
+        - name: Load user creds
+          ansible.builtin.set_fact:
+            user_creds: "{{ ansible_local.molecule.user_creds }}"
 
     - name: Create test users
       ansible.builtin.include_role:
@@ -32,73 +50,9 @@
           - username: testadmin
             admin: true
             state: present
-            password: $5$M8PNjsAxVb2QqRzN$jH7YgbvE/4kO7SRBCPYDP69OJV0aDQVMoig8aKoLAfD
+            password: "{{ user_creds.testadmin_pw_hash }}"
           - username: testuser
             state: present
-            ssh_keys:   # TODO: Replace this ssh key with one that's dynamically generated!
-              - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC6enYRSK7kBwD+KHU1OVBpHjz3iRA5DW4PPacZmRHxvxJ2H2gRVnqB38hgEbm1LkPOjI1b/S5kMGI4gMeHWe4CUFYoyVcyMyyDPNdGArDZErz5cGoMEE/9319p5O6lTLWh7omrR2cAEMU8mQ3zfvPxk2OvzGaG834tfu0POpGk5xIj0cqxyUQn7vy1GSu+E0aMql/jK0HahSSMdqk4B8x1dHhvpd17ZYA37NMjUBuhc7vClxoufxkjKxAIoLL/Tx79H2CoQ9OtE/u/Z5X9t3NLdy1+wuSgV+TD7ib1cHnGtCQ4/8625l/2rVRnU/jfApRTrkrv1Fhu1H5p6eKEwjJQ29CEUKFeQLM1NluIJVWWhLXTg3ec0MHOrAr8I/bZECeNB5qRZTfQSfkcXjqfNGoVVoXIqCGIFY6ULQqd9OoGYrBpOG/LfH2Ly5P9aHAHoZZ+dEi8QcRYqPyQmqg815v/dvMDeN5Ohr8sCHOR2TcnE6Hj7IcTm0yo8gKMl1hLCuc= testuser@molecule"
-
-    - name: Test user authentication
-      vars:
-        testadmin_pw: test123
-      block:
-        - name: Attempt admin logon
-          become: true
-          become_user: testuser
-          ansible.builtin.shell:
-            cmd: echo {{ testadmin_pw }} | su - testadmin -c 'echo success'
-          register: testadmin_login_result
-          changed_when: false
-
-        - name: Show login output
-          ansible.builtin.debug:
-            msg: "{{ testadmin_login_result.stdout }}"
-        - name: Attempt ssh login with key
-          block:
-            - name: Install openssh
-              become: true
-              block:
-                - name: Network tools are installed
-                  ansible.builtin.package:
-                    name:
-                      - iputils
-                      - bind-utils
-                    state: present
-
-                - name: Openssh is installed
-                  ansible.builtin.package:
-                    name:
-                      - openssh-clients
-                      - openssh-server
-                    state: present
-
-                - name: Set openssh port
-                  ansible.builtin.copy:
-                    content: |
-                      Port 2022
-                    dest: /etc/ssh/sshd_config.d/90-port.conf
-                    owner: root
-                    group: root
-                    mode: 0644
-
-                - name: SSH Server is running
-                  ansible.builtin.systemd_service:
-                    name: sshd
-                    state: started
-
-            - name: SSH key exists on host
-              ansible.builtin.copy:
-                src: "{{ playbook_dir }}/files/testuser"
-                dest: /tmp/testuser
-                mode: 0600
-
-            - name: Attempt ssh login
-              ansible.builtin.command:
-                cmd: ssh -i /tmp/testuser -o StrictHostKeyChecking=no -p 2022 testuser@localhost 'echo success'
-              register: testuser_ssh_result
-              changed_when: false
-
-            - name: Show ssh login output
-              ansible.builtin.debug:
-                msg: "{{ testuser_ssh_result.stdout }}"
+            ssh_keys:
+              - "{{ user_creds.testuser_pubkey }}"
 

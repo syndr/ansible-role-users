@@ -39,7 +39,7 @@
     name: "{{ platform.name }}"
     image: "{{ docker_built_image_name | default(platform.image) }}"
     state: started
-    #command: "{{ platform.command }}"
+    command: "{{ platform.command }}"
     log_driver: json-file
     hostname: molecule-ci
     init: false
