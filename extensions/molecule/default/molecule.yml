@@ -25,7 +25,7 @@ provisioner:
   config_options:
     defaults:
       gathering: explicit
-      vault_password_file: ~/.ansible/molecule-ci.pw
+      vault_password_file: ${MOLECULE_VAULT_PASSWORD_FILE:-""}
       verbosity: 0
 scenario:
   create_sequence:
