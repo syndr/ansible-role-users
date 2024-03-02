@@ -2,5 +2,6 @@
 
 collections:
   - community.docker
+  - ansible.posix
   - syndr.molecule
 
