@@ -1,5 +1,5 @@
 ---
-# Verify that user accounts are configured correctly
+# Verify that the role being tested has done what it's supposed to
 
 - name: Verify
   hosts: molecule

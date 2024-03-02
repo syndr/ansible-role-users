@@ -1,5 +1,5 @@
 ---
-role_name_check: ${MOLECULE_ROLE_NAME_CHECK:-0}
+role_name_check: 0
 dependency:
   name: galaxy
 driver:
@@ -9,23 +9,19 @@ driver:
     login_cmd_template: 'docker exec -ti {instance} bash'
 platforms:
   - name: instance
-    image: "geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+    image: geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest
+    systemd: True
     modify_image: false
-    dockerfile: files/Dockerfile
-    command: ${MOLECULE_DOCKER_COMMAND:-""}
-    volumes:
-      - /sys/fs/cgroup/molecule-ci.scope:/sys/fs/cgroup:rw
-    cgroupns_mode: host
     privileged: false
-    tmpfs:
-      - /run
 provisioner:
   name: ansible
   log: True
   playbooks:
     prepare: prepare.yml
-    converge: ${MOLECULE_PLAYBOOK:-converge.yml}
+    converge: converge.yml
+    side_effect: side_effect.yml
     verify: verify.yml
+    cleanup: cleanup.yml
   config_options:
     defaults:
       gathering: explicit

@@ -1,4 +1,8 @@
 ---
+# Verify that the target code runs successfullly.
+# Note that this playbook (converge.yml) must be idempotent!
+
+# Check that the molecule inventory is correctly configured
 - name: Fail if molecule group is missing
   hosts: localhost
   tasks:

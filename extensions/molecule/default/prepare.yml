@@ -2,45 +2,25 @@
 
 - name: Prepare controller for execution
   hosts: localhost
-  vars:
-    project_dir: "{{ molecule_scenario_directory.split('/')[:-3] | join('/') }}"
   tasks:
-    - name: Project directory is
-      ansible.builtin.debug:
-        var: project_dir
-
-    - name: Load super important role info
-      block:
-        - name: Load meta file
-          ansible.builtin.include_vars:
-            file: "{{ project_dir }}/meta/main.yml"
-            name: project_meta
-
-        - name: Role name is defined
-          ansible.builtin.assert:
-            that:
-              - project_meta.galaxy_info.role_name is defined
-            fail_msg: This configuration requires the role_name meta variable to be defined!
-      rescue:
-        - name: Configuration load error
-          ansible.builtin.fail:
-            msg: Error loading role meta information! This molecule configuration is meant to be run from the extensions/ subdirectory of your role directory!
-
-    - name: Create roles directory
-      ansible.builtin.file:
-        path: "{{ molecule_ephemeral_directory }}/roles"
-        state: directory
-        mode: 0755
-
-    - name: Link current repository to roles working directory
-      ansible.builtin.file:
-        src: "{{ project_dir }}"
-        dest: "{{ molecule_ephemeral_directory }}/roles/{{ project_meta.galaxy_info.role_name }}"
-        state: link
+    - name: Configure for standalone role testing
+      ansible.builtin.include_role:
+        name: syndr.molecule.prepare_controller
+      vars:
+        prepare_controller_project_type: role
 
 - name: Prepare target host for execution
   hosts: molecule
   tasks:
+    - name: Check target kernel version
+      ansible.builtin.raw: uname -a
+      register: uname_raw
+      changed_when: false
+
+    - name: Display kernel information
+      ansible.builtin.debug:
+        var: uname_raw.stdout
+
     - name: Install system utilities
       become: true
       ansible.builtin.package:
@@ -97,5 +77,4 @@
                 owner: root
                 group: root
                 mode: 0644
-
 

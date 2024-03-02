@@ -1,0 +1,14 @@
+---
+# Initialize a Molecule scenario for use within a role
+
+- name: Provision file structure
+  hosts: localhost
+  tasks:
+    - name: Launch provisioner
+      ansible.builtin.include_role:
+        name: syndr.molecule.init
+      vars:
+        init_project_type: role
+        init_platform_image: "geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest"
+        init_platform_systemd: true
+

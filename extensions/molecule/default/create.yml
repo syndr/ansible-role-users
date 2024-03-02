@@ -2,68 +2,20 @@
 - name: Create
   hosts: localhost
   gather_facts: false
-  vars:
-    molecule_inventory:
-      all:
-        hosts: {}
-        children:
-          molecule:
-            hosts: {}
   tasks:
-    - name: Create a docker container
-      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/create-docker.yml"
-      loop: "{{ molecule_yml.platforms }}"
-      loop_control:
-        loop_var: platform
-        label: "{{ platform.name }}"
-
-    - name: Add container to molecule_inventory
+    - name: Create platform
+      ansible.builtin.include_role:
+        name: syndr.molecule.docker_platform
       vars:
-        inventory_partial_yaml: |
-          all:
-            children:
-              molecule:
-                hosts:
-                  "{{ item.name }}":
-                    ansible_connection: community.docker.docker
-      ansible.builtin.set_fact:
-        molecule_inventory: >
-          {{ molecule_inventory | combine(inventory_partial_yaml | from_yaml, recursive=true) }}
+        docker_platform_name: "{{ item.name }}"
+        docker_platform_image: "{{ item.image }}"
+        docker_platform_systemd: "{{ item.systemd | default(false) }}"
+        docker_platform_modify_image: "{{ item.modify_image | default(false) }}"
+        docker_platform_privileged: "{{ item.privileged | default (false) }}"
+        docker_platform_state: present
       loop: "{{ molecule_yml.platforms }}"
       loop_control:
-        label: "{{ item.name }}"
-
-    #- name: Dump env
-    #  ansible.builtin.debug:
-    #    var: hostvars
-
-    - name: Write instance_config file
-      ansible.builtin.copy:
-        # This is very basic - just needs an item there to show as managed with docker config
-        content: |
-          {% for instance in molecule_yml.platforms %}
-          - instance: {{ instance.name }}
-            connection: docker
-          {% endfor %}
-        dest: "{{ molecule_ephemeral_directory }}/instance_config.yml"
-        mode: "0600"
-
-    - name: Dump molecule_inventory
-      ansible.builtin.copy:
-        content: |
-          {{ molecule_inventory | to_yaml }}
-        dest: "{{ molecule_ephemeral_directory }}/inventory/molecule_inventory.yml"
-        mode: "0600"
-
-    - name: Force inventory refresh
-      ansible.builtin.meta: refresh_inventory
-
-    - name: Fail if molecule group is missing
-      ansible.builtin.assert:
-        that: "'molecule' in groups"
-        fail_msg: |
-          molecule group was not found inside inventory groups: {{ groups }}
-      run_once: true # noqa: run-once[task]
+        label: item.name
 
 # we want to avoid errors like "Failed to create temporary directory"
 - name: Validate that inventory was refreshed
