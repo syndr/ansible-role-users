@@ -1,0 +1,62 @@
+---
+# Verify that the target code runs successfullly.
+# Note that this playbook (converge.yml) must be idempotent!
+
+# Check that the molecule inventory is correctly configured
+- name: Fail if molecule group is missing
+  hosts: localhost
+  tasks:
+    - name: Print host inventory groups
+      ansible.builtin.debug:
+        msg: "{{ groups }}"
+
+    - name: Assert group existence
+      ansible.builtin.assert:
+        that: "'molecule' in groups"
+        fail_msg: |
+          molecule group was not found inside inventory groups: {{ groups }}
+
+- name: Converge
+  hosts: molecule
+  tasks:
+    - name: Check uname
+      ansible.builtin.raw: uname -a
+      register: result
+      changed_when: false
+
+    - name: Verify kernel type
+      ansible.builtin.assert:
+        that: result.stdout | regex_search("^Linux")
+
+    - name: Do preparation
+      block:
+        - name: Load local host facts
+          ansible.builtin.setup:
+            gather_subset:
+              - '!all'
+              - '!min'
+              - local
+
+        - name: Show local Ansible facts
+          ansible.builtin.debug:
+            var: ansible_facts.ansible_local
+            verbosity: 1
+
+        - name: Load user creds
+          ansible.builtin.set_fact:
+            user_creds: "{{ ansible_local.molecule.user_creds }}"
+
+    - name: Create test users
+      ansible.builtin.include_role:
+        name: users
+      vars:
+        server_users:
+          - username: testadmin
+            admin: true
+            state: present
+            password: "{{ user_creds.testadmin_pw_hash }}"
+          - username: testuser
+            state: present
+            ssh_keys:
+              - "{{ user_creds.testuser_pubkey }}"
+

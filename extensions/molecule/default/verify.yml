@@ -1,0 +1,100 @@
+---
+# Verify that the role being tested has done what it's supposed to
+
+- name: Verify
+  hosts: molecule
+  tasks:
+    - name: Load local host facts
+      ansible.builtin.setup:
+        gather_subset:
+          - '!all'
+          - '!min'
+          - local
+
+    - name: Load user creds
+      ansible.builtin.set_fact:
+        user_creds: "{{ ansible_local.molecule.user_creds }}"
+
+    - name: Test user authentication
+      block:
+        - name: Attempt admin logon
+          become: true
+          become_user: testuser
+          ansible.builtin.shell:
+            cmd: echo {{ user_creds.testadmin_pw }} | su - testadmin -c 'echo success'
+          register: testadmin_login_result
+          changed_when: false
+
+        - name: Show login output
+          ansible.builtin.debug:
+            msg: "{{ testadmin_login_result.stdout }}"
+
+        - name: Attempt sudo as admin user
+          become: true
+          become_user: testadmin
+          ansible.builtin.command:
+            cmd: sudo -n ls
+          changed_when: false
+
+        - name: Attempt ssh login with key
+          block:
+            - name: Configure system
+              become: true
+              block:
+                - name: Network tools are installed
+                  ansible.builtin.package:
+                    name:
+                      - iputils
+                      - bind-utils
+                    state: present
+
+                - name: Openssh is installed
+                  ansible.builtin.package:
+                    name:
+                      - openssh-clients
+                      - openssh-server
+                    state: present
+
+                - name: Set openssh port
+                  ansible.builtin.copy:
+                    content: |
+                      Port 2022
+                    dest: /etc/ssh/sshd_config.d/90-port.conf
+                    owner: root
+                    group: root
+                    mode: 0644
+
+                - name: SSH Server is running
+                  ansible.builtin.systemd_service:
+                    name: sshd
+                    state: started
+
+            - name: Attempt ssh login
+              ansible.builtin.command:
+                cmd: ssh -i /tmp/testuser -o StrictHostKeyChecking=no -p 2022 testuser@localhost 'echo success'
+              register: testuser_ssh_result
+              changed_when: false
+
+            - name: Show ssh login output
+              ansible.builtin.debug:
+                msg: "{{ testuser_ssh_result.stdout }}"
+
+    - name: Test user removal
+      block:
+        - name: Remove test admin user
+          ansible.builtin.include_role:
+            name: users
+          vars:
+            server_users:
+              - username: testadmin
+                state: absent
+
+        - name: Attempt admin logon (should be unsuccessful)
+          become: true
+          become_user: testuser
+          ansible.builtin.shell:
+            cmd: echo {{ user_creds.testadmin_pw }} | su - testadmin -c 'echo fail'
+          register: testadmin_login_result
+          changed_when: false
+          failed_when: testadmin_login_result.rc != 1
+
