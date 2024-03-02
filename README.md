@@ -1,3 +1,5 @@
+[![Molecule Test](https://github.com/syndr/ansible-role-users/actions/workflows/main.yml/badge.svg)](https://github.com/syndr/ansible-role-users/actions/workflows/main.yml)
+
 users
 =========
 
