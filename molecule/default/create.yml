@@ -17,7 +17,7 @@
       loop_control:
         label: item.name
 
-# we want to avoid errors like "Failed to create temporary directory"
+# We want to avoid errors like "Failed to create temporary directory"
 - name: Validate that inventory was refreshed
   hosts: molecule
   gather_facts: false
@@ -30,3 +30,4 @@
     - name: Display uname info
       ansible.builtin.debug:
         msg: "{{ result.stdout }}"
+
