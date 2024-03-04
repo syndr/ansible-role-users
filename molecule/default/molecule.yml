@@ -9,10 +9,10 @@ driver:
     login_cmd_template: 'docker exec -ti {instance} bash'
 platforms:
   - name: instance
-    image: geerlingguy/docker-${MOLECULE_DISTRO:-rockylinux9}-ansible:latest
+    image: geerlingguy/docker-${MOLECULE_GEERLINGGUY_DISTRO:-rockylinux9}-ansible:latest
     systemd: True
-    modify_image: false
-    privileged: false
+    modify_image: False
+    privileged: False
 provisioner:
   name: ansible
   log: True
@@ -25,7 +25,7 @@ provisioner:
   config_options:
     defaults:
       gathering: explicit
-      verbosity: 0
+      verbosity: ${ANSIBLE_VERBOSITY:-0}
 scenario:
   create_sequence:
     - dependency
