@@ -41,6 +41,7 @@
       ansible.builtin.include_role:
         name: users
       vars:
+        ansible_user: molecule_runner
         server_users:
           - username: testadmin
             admin: true

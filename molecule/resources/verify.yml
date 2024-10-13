@@ -3,8 +3,10 @@
 
 - name: Verify
   hosts: molecule
+  vars:
+    ansible_user: molecule_runner
   tasks:
-    - name: Load local host facts
+    - name: Load local facts
       ansible.builtin.setup:
         gather_subset:
           - '!all'
@@ -21,7 +23,7 @@
           become: true
           become_user: testuser
           ansible.builtin.shell:
-            cmd: echo {{ user_creds.testadmin_pw }} | su - testadmin -c 'echo success'
+            cmd: echo '{{ user_creds.testadmin_pw }}' | su - testadmin -c 'echo success'
           register: testadmin_login_result
           changed_when: false
 
@@ -48,30 +50,57 @@
                       - bind-utils
                     state: present
 
-                - name: Openssh is installed
-                  ansible.builtin.package:
-                    name:
-                      - openssh-clients
-                      - openssh-server
-                    state: present
+                - name: Load running services
+                  ansible.builtin.service_facts:
 
-                - name: Set openssh port
+                - name: Configure an ssh server
+                  when: "'sshd.service' not in ansible_facts.services"
+                  block:
+                    - name: Openssh is installed
+                      ansible.builtin.package:
+                        name:
+                          - openssh-clients
+                          - openssh-server
+                        state: present
+
+                    - name: Set openssh port
+                      ansible.builtin.copy:
+                        content: |
+                          Port 2022
+                        dest: /etc/ssh/sshd_config.d/90-port.conf
+                        owner: root
+                        group: root
+                        mode: 0644
+
+                    - name: SSH Server is running
+                      ansible.builtin.systemd_service:
+                        name: sshd
+                        state: started
+
+                    - name: Set ssh port
+                      ansible.builtin.set_fact:
+                        ci_ssh_port: 2022
+
+                - name: User .ssh directory exists
+                  ansible.builtin.file:
+                    path: /home/{{ ansible_user }}/.ssh
+                    state: directory
+                    owner: "{{ ansible_user }}"
+                    group: "{{ ansible_user }}"
+                    mode: 0700
+
+                - name: Test user has priv key
                   ansible.builtin.copy:
-                    content: |
-                      Port 2022
-                    dest: /etc/ssh/sshd_config.d/90-port.conf
-                    owner: root
-                    group: root
-                    mode: 0644
-
-                - name: SSH Server is running
-                  ansible.builtin.systemd_service:
-                    name: sshd
-                    state: started
+                    src: /tmp/testuser
+                    dest: /home/{{ ansible_user }}/.ssh/id_rsa
+                    remote_src: true
+                    owner: "{{ ansible_user }}"
+                    group: "{{ ansible_user }}"
+                    mode: 0600
 
             - name: Attempt ssh login
               ansible.builtin.command:
-                cmd: ssh -i /tmp/testuser -o StrictHostKeyChecking=no -p 2022 testuser@localhost 'echo success'
+                cmd: ssh -o StrictHostKeyChecking=no -p {{ ci_ssh_port | default(22) }} testuser@localhost 'echo success'
               register: testuser_ssh_result
               changed_when: false
 
@@ -93,7 +122,7 @@
           become: true
           become_user: testuser
           ansible.builtin.shell:
-            cmd: echo {{ user_creds.testadmin_pw }} | su - testadmin -c 'echo fail'
+            cmd: echo '{{ user_creds.testadmin_pw }}' | su - testadmin -c 'echo fail'
           register: testadmin_login_result
           changed_when: false
           failed_when: testadmin_login_result.rc != 1
