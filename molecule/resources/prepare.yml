@@ -12,35 +12,68 @@
 - name: Prepare target host for execution
   hosts: molecule
   tasks:
-    - name: Check target kernel version
-      ansible.builtin.raw: uname -a
-      register: uname_raw
-      changed_when: false
+    ##
+    # Creating an admin service account for Molecule/Ansible to use for testing
+    #
+    #   - If you run Ansible as a service account (you should) on your hosts and
+    #     not as root, it is wise to also test as a non-root user!
+    #
+    #   - To use this account, add the following to any plays targeting test
+    #     infrastructure (such as in converge.yml):
+    #
+    #         vars:
+    #           ansible_user: molecule_runner
+    ##
 
-    - name: Display kernel information
-      ansible.builtin.debug:
-        var: uname_raw.stdout
+    - name: Create ansible service account
+      vars:
+        molecule_user: molecule_runner
+      become: true
+      block:
+        - name: Create ansible group
+          ansible.builtin.group:
+            name: "{{ molecule_user }}"
+
+        - name: Create ansible user
+          ansible.builtin.user:
+            name: "{{ molecule_user }}"
+            group: "{{ molecule_user }}"
+
+        - name: Sudoers.d directory exists
+          ansible.builtin.file:
+            path: /etc/sudoers.d
+            state: directory
+            owner: root
+            group: root
+            mode: 0751
+
+        - name: Ansible user has sudo
+          ansible.builtin.copy:
+            content: |
+              {{ molecule_user }}  ALL=(ALL)  NOPASSWD: ALL
+            dest: /etc/sudoers.d/ansible
+            owner: root
+            group: root
+            mode: 0600
 
     - name: Install system utilities
       become: true
       ansible.builtin.package:
         name:
-          - mkpasswd
-          - pwgen
           - openssh
         state: present
 
     - name: Generate creds for this test
       block:
         - name: Generate admin user password
-          ansible.builtin.command:
-            cmd: pwgen -s 20 1
+          ansible.builtin.shell:
+            cmd: tr -dc 'a-zA-Z0-9!@#$%^&*()_+' < /dev/urandom | head -c 8; echo
           register: testadmin_pwgen_raw
 
         - name: Generate admin user password hash
           ansible.builtin.command:
-            cmd: mkpasswd -m sha-256 {{ testadmin_pwgen_raw.stdout | trim }}
-          register: testadmin_mkpasswd_raw
+            cmd: openssl passwd -1 {{ testadmin_pwgen_raw.stdout | trim }}
+          register: testadmin_pwhash_raw
 
         - name: Generate ssh keypair
           ansible.builtin.command:
@@ -56,7 +89,7 @@
           ansible.builtin.set_fact:
             user_creds:
               testadmin_pw: "{{ testadmin_pwgen_raw.stdout | trim }}"
-              testadmin_pw_hash: "{{ testadmin_mkpasswd_raw.stdout | trim }}"
+              testadmin_pw_hash: "{{ testadmin_pwhash_raw.stdout | trim }}"
               testuser_pubkey: "{{ testuser_pubkey_b64.content | b64decode }}"
 
         - name: Save vars to host (for idempotence)
@@ -68,7 +101,7 @@
                 state: directory
                 owner: root
                 group: root
-                mode: 0744
+                mode: 0755
 
             - name: User creds saved to local Ansible facts
               ansible.builtin.copy:
