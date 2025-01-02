@@ -1,0 +1,84 @@
+---
+# Manage system user accounts
+#
+# Expected variables:
+#   __user_managed_accounts: A list of user accounts to manage
+#
+
+- name: Manage user accounts
+  become: true
+  block:
+    - name: Terminate user running processes
+      loop: "{{ __user_managed_accounts | selectattr('state', 'eq', 'absent') }}"
+      loop_control:
+        loop_var: __user_terminate_user
+        label: "{{ __user_terminate_user.username }}"
+      ansible.builtin.script:
+        cmd: "{{ role_path }}/files/terminate_user_sessions.sh {{ __user_terminate_user.username }}"
+      register: __user_session_result
+      changed_when: "'for user ' + __user_terminate_user.username + ' have been terminated' in __user_session_result.stdout"
+
+    - name: Configure user account (no password)
+      loop: "{{ __user_managed_accounts | selectattr('password', 'undefined') }}"
+      loop_control:
+        loop_var: __user_nopw_user
+        label: "{{ __user_nopw_user.username }}"
+      ansible.builtin.user:
+        name: "{{ __user_nopw_user.username }}"
+        password_lock: true
+        state: "{{ __user_nopw_user.state }}"
+
+    - name: Configure user account (password)
+      loop: "{{ __user_managed_accounts | selectattr('password', 'defined') }}"
+      loop_control:
+        loop_var: __user_pw_user
+        label: "{{ __user_pw_user.username }}"
+      ansible.builtin.user:
+        name: "{{ __user_pw_user.username }}"
+        password: "{{ __user_pw_user.password }}"
+        state: "{{ __user_pw_user.state }}"
+
+    - name: Configure user account (all)
+      loop: "{{ __user_managed_accounts | rejectattr('state', 'eq', 'absent') }}"
+      loop_control:
+        loop_var: __user_details
+        label: "{{ __user_details.username }}"
+      vars:
+        __user_default_shell: "{{ '/bin/false' if __user_details.robot | default(false) else '/bin/bash' }}"
+      ansible.builtin.user:
+        name: "{{ __user_details.username }}"
+        group: "{{ __user_details.group | default(__user_details.username) }}"
+        groups: "{{ __user_details.groups | default([]) }}"
+        append: "{{ __user_details.append | default(true) }}"
+        expires: "{{ __user_details.expires | default(-1) }}"
+        shell: "{{ __user_details.shell | default(__user_default_shell) }}"
+        state: "{{ __user_details.state | default('present') }}"
+        create_home: "{{ __user_details.create_home | default(true) }}"
+        generate_ssh_key: "{{ __user_details.generate_ssh_key | default(false) }}"
+        ssh_key_type: "{{ __user_details.ssh_key_type | default('ed25519') }}"
+
+- name: Archive nouser home directories
+  vars:
+    __user_archive_dir: "/home/old_users"
+  block:
+    - name: User archive directory exists
+      become: true
+      ansible.builtin.file:
+        path: "{{ __user_archive_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Find and move nouser folders in /home/
+      become: true
+      ansible.legacy.shell:
+        cmd: |
+          for user in $(find /home/ -maxdepth 1 -nouser -printf '%f\n'); do
+            echo "Archiving user: $user";
+            mv /home/$user {{ __user_archive_dir }}/$user-{{ ansible_date_time.iso8601_basic_short }}/;
+          done
+      register: __user_moveuser_result
+      changed_when: "'Archiving user' in __user_moveuser_result.stdout"
+      notify: Show archived users
+

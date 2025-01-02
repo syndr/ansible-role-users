@@ -40,64 +40,6 @@
 
         - name: Attempt ssh login with key
           block:
-            - name: Configure system
-              become: true
-              block:
-                - name: Network tools are installed
-                  ansible.builtin.package:
-                    name:
-                      - iputils
-                      - bind-utils
-                    state: present
-
-                - name: Load running services
-                  ansible.builtin.service_facts:
-
-                - name: Configure an ssh server
-                  when: "'sshd.service' not in ansible_facts.services"
-                  block:
-                    - name: Openssh is installed
-                      ansible.builtin.package:
-                        name:
-                          - openssh-clients
-                          - openssh-server
-                        state: present
-
-                    - name: Set openssh port
-                      ansible.builtin.copy:
-                        content: |
-                          Port 2022
-                        dest: /etc/ssh/sshd_config.d/90-port.conf
-                        owner: root
-                        group: root
-                        mode: 0644
-
-                    - name: SSH Server is running
-                      ansible.builtin.systemd_service:
-                        name: sshd
-                        state: started
-
-                    - name: Set ssh port
-                      ansible.builtin.set_fact:
-                        ci_ssh_port: 2022
-
-                - name: User .ssh directory exists
-                  ansible.builtin.file:
-                    path: /home/{{ ansible_user }}/.ssh
-                    state: directory
-                    owner: "{{ ansible_user }}"
-                    group: "{{ ansible_user }}"
-                    mode: 0700
-
-                - name: Test user has priv key
-                  ansible.builtin.copy:
-                    src: /tmp/testuser
-                    dest: /home/{{ ansible_user }}/.ssh/id_rsa
-                    remote_src: true
-                    owner: "{{ ansible_user }}"
-                    group: "{{ ansible_user }}"
-                    mode: 0600
-
             - name: Attempt ssh login
               ansible.builtin.command:
                 cmd: ssh -o StrictHostKeyChecking=no -p {{ ci_ssh_port | default(22) }} testuser@localhost 'echo success'
@@ -108,8 +50,80 @@
               ansible.builtin.debug:
                 msg: "{{ testuser_ssh_result.stdout }}"
 
+    - name: Verify expected users exist
+      loop:
+        - testadmin
+        - testuser
+        - test_application_user
+        - test_ssh_keygen_user
+        - test_ssh_privkey_user
+        - test_temporary_user
+      loop_control:
+        loop_var: __user
+      ansible.builtin.command:
+        cmd: getent passwd {{ __user }}
+      changed_when: false
+
+    - name: Verify privkey user has valid private key
+      become: true
+      ansible.builtin.command:
+        cmd: ssh-keygen -y -f /home/test_ssh_privkey_user/.ssh/id_rsa
+      register: test_ssh_privkey_user_pubkey
+      changed_when: false
+      failed_when: test_ssh_privkey_user_pubkey.rc != 0 or 'testuser@molecule' not in test_ssh_privkey_user_pubkey.stdout
+
+    - name: Verify user expiration date
+      vars:
+        __user_expiration_account: test_temporary_user
+      block:
+        - name: Get user expiration date
+          become: true
+          ansible.builtin.shell:
+            cmd: chage -l {{ __user_expiration_account }}
+          register: user_expiration_result
+          changed_when: false
+
+        - name: Extract expiration information
+          ansible.builtin.set_fact:
+            user_expiration_info: "{{ user_expiration_result.stdout_lines | select('search', '^Account expires.*') | list }}"
+
+        - name: Show expiration information
+          ansible.builtin.debug:
+            msg: "{{ user_expiration_info }}"
+
+        - name: Verify expiration date
+          ansible.builtin.assert:
+            that:
+              - user_expiration_info | length == 1
+              - user_expiration_info[0] | regex_search('Account expires.*never') is not truthy
+            fail_msg: "User {{ __user_expiration_account }} should have an expiration date"
+            success_msg: "User {{ __user_expiration_account }} has an expiration date"
+
+        - name: Attempt expired login
+          ansible.builtin.command:
+            cmd: ssh -o StrictHostKeyChecking=no -p {{ ci_ssh_port | default(22) }} {{ __user_expiration_account }}@localhost 'echo success'
+          register: expired_user_ssh_result
+          changed_when: false
+          failed_when: expired_user_ssh_result.rc == 0
+
+        - name: Validate login output
+          ansible.builtin.assert:
+            that:
+              - expired_user_ssh_result.stderr is search('account has expired')
+            fail_msg: "Account does not report expired status! {{ expired_user_ssh_result.stderr }}"
+            success_msg: "Account reports expired status"
+
     - name: Test user removal
       block:
+        - name: Start a process as the test user
+          become: true
+          become_user: testadmin
+          ansible.builtin.shell:
+            cmd: sleep 600 &
+          async: 60
+          poll: 0
+          register: testuser_sleep
+
         - name: Remove test admin user
           ansible.builtin.include_role:
             name: users

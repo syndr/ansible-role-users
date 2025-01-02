@@ -2,6 +2,7 @@ galaxy_info:
   author: syndr
   role_name: users
   description: Configure host system user accounts
+  namespace: syndr
 
   # If the issue tracker for your role is not on github, uncomment the
   # next line and provide a value
@@ -28,17 +29,18 @@ galaxy_info:
   # https://galaxy.ansible.com/api/v1/platforms/
   #
   platforms:
-   - name: Fedora
-     versions:
-       - all
-       - 28
-   - name: Rocky
-     versions:
-       - all
-       - 8
-   - name: Amazon
-     versions:
-       - 2
+    - name: Fedora
+      versions:
+        - 41
+    - name: Rocky
+      versions:
+        - 9
+    - name: Amazon
+      versions:
+        - 2023
+    - name: Ubuntu
+      versions:
+        - 24.04
 
   galaxy_tags:
     - system

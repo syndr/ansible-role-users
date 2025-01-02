@@ -1,0 +1,11 @@
+---
+# Validate input data
+#
+
+- name: Expected user attributes are present
+  ansible.builtin.assert:
+    that:
+      - server_users | selectattr('username', 'defined') | list | length == server_users | list | length
+    fail_msg: "All users must have a username!"
+    success_msg: "All required user attributes are present."
+

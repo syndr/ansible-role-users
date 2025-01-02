@@ -27,6 +27,7 @@
               - '!all'
               - '!min'
               - local
+              - date_time
 
         - name: Show local Ansible facts
           ansible.builtin.debug:
@@ -51,4 +52,30 @@
             state: present
             ssh_keys:
               - "{{ user_creds.testuser_pubkey }}"
+          - username: test_application_user
+            state: present
+            create_home: false
+            robot: true
+            groups:
+              - test_application_group
+          - username: test_ssh_keygen_user
+            state: present
+            generate_ssh_key: true
+          - username: test_ssh_privkey_user
+            state: present
+            ssh_private_key: "{{ user_creds.testuser_privkey }}"
+            ssh_key_type: rsa
+          - username: test_temporary_user
+            state: present
+            expires: "{{ ansible_date_time.epoch | int + 3600 }}"
+            ssh_keys:
+              - "{{ user_creds.testuser_pubkey }}"
+          - username: test_temporary_expired_user
+            state: present
+            expires: "{{ ansible_date_time.epoch }}"
+            ssh_keys:
+              - "{{ user_creds.testuser_pubkey }}"
+          - username: test_absent_user
+            state: absent
+
 

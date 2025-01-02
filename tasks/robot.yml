@@ -1,0 +1,20 @@
+---
+# Manage robot user accounts
+#
+# Expected variables:
+#   __user_robot_accounts: A list of robot accounts to manage;
+#
+
+- name: Deploy robot profile marker
+  become: true
+  loop: "{{ __user_robot_accounts }}"
+  loop_control:
+    loop_var: __user_robot_account
+    label: "{{ __user_robot_account.username }}"
+  ansible.builtin.copy:
+    content: "beep boop"
+    dest: "/home/{{ __user_robot_account.username }}/.robot"
+    owner: "{{ __user_robot_account.username }}"
+    group: "{{ __user_robot_account.group | default(__user_robot_account.username) }}"
+    mode: "0644"
+
