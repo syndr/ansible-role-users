@@ -3,136 +3,53 @@
 
 - name: Load ansible environment vars
   ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - "!min"
+      - date_time
+      - user
     filter:
       - ansible_user_id
+      - ansible_date_time*
+
+- name: Show date time facts
+  ansible.builtin.debug:
+    var: ansible_date_time
 
 - name: Make the users 👌
+  vars:
+    __user_managed_accounts: "{{ server_users | rejectattr('username', 'eq', ansible_user_id) }}"
+    __user_present_accounts: "{{ __user_managed_accounts | rejectattr('state', 'eq', 'absent') }}"
+    __user_absent_accounts: "{{ __user_managed_accounts | selectattr('state', 'eq', 'absent') }}"
   block:
-    - name: Manage user groups
-      vars:
-        __user_primary_groups: >
-          {{
-            server_users | rejectattr('state', 'eq', 'absent') |
-            selectattr('group', 'defined') | map(attribute='group')
-            | unique | default([])
-          }}
-        __user_secondary_groups: "{{ server_users | selectattr('groups', 'defined') | map(attribute='groups') | flatten | unique | default([]) }}"
-      become: true
-      block:
-        - name: User group exists
-          loop: "{{ __user_primary_groups + __user_secondary_groups }}"
-          loop_control:
-            loop_var: __user_group
-          ansible.builtin.group:
-            name: "{{ __user_group }}"
-          when: __user_group.state | default('present') == 'present'
-
     - name: Warn about currently logged on user
       loop: "{{ server_users | selectattr('state', 'eq', 'absent') | selectattr('username', 'eq', ansible_user_id)}}"
       loop_control:
-        label: "{{ item.username }}"
+        loop_var: __user_current_user
+        label: "{{ __user_current_user.username }}"
       ansible.builtin.debug:
-          msg: ⚠ Not removing user {{ item.username }} because we are currently running as that user!
+          msg: ⚠ Not removing user {{ __user_current_user.username }} because we are currently running as that user!
+
+    - name: Manage user groups
+      ansible.builtin.include_tasks: groups.yml
 
     - name: Manage user accounts
+      ansible.builtin.include_tasks: users.yml
+
+    - name: Manage user ssh keys
       vars:
-        __user_managed_accounts: "{{ server_users | rejectattr('username', 'eq', ansible_user_id) }}"
-      become: true
-      block:
-        - name: Configure user account (no password)
-          loop: "{{ __user_managed_accounts | selectattr('password', 'undefined') }}"
-          loop_control:
-            loop_var: __user_nopw_user
-            label: "{{ __user_nopw_user.username }}"
-          ansible.builtin.user:
-            name: "{{ __user_nopw_user.username }}"
-            password_lock: true
-            state: "{{ __user_nopw_user.state }}"
+        __user_ssh_accounts: >
+          {{
+            __user_present_accounts | selectattr('ssh_keys', 'defined') | default([]) +
+            __user_present_accounts | selectattr('ssh_private_key', 'defined') | default([])
+          }}
+      ansible.builtin.include_tasks: ssh.yml
 
-        - name: Configure user account (password)
-          loop: "{{ __user_managed_accounts | selectattr('password', 'defined') }}"
-          loop_control:
-            loop_var: __user_pw_user
-            label: "{{ __user_pw_user.username }}"
-          ansible.builtin.user:
-            name: "{{ __user_pw_user.username }}"
-            password: "{{ __user_pw_user.password }}"
-            state: "{{ __user_pw_user.state }}"
+    - name: Manage user sudo access
+      ansible.builtin.include_tasks: sudo.yml
 
-        - name: Configure user account (all)
-          loop: "{{ __user_managed_accounts | rejectattr('state', 'eq', 'absent') }}"
-          loop_control:
-            loop_var: __user_details
-            label: "{{ __user_details.username }}"
-          ansible.builtin.user:
-            name: "{{ __user_details.username }}"
-            group: "{{ __user_details.group | default(__user_details.username) }}"
-            groups: "{{ __user_details.groups | default([]) }}"
-            append: "{{ __user_details.append | default(true) }}"
-            shell: "{{ __user_details.shell | default('/bin/bash') }}"
-            state: "{{ __user_details.state | default('present') }}"
-
-        - name: Remove absent user primary group
-          loop: >
-            {{
-              __user_managed_accounts | selectattr('state', 'defined') | selectattr('state', 'eq', 'absent') |
-              selectattr('group', 'defined') | map(attribute='group') | unique
-            }}
-          loop_control:
-            loop_var: __user_group
-          ansible.builtin.group:
-            name: "{{ item.username }}"
-            state: absent
-
-        - name: Add ssh keys for logon
-          vars:
-            __user_ssh_accounts: "{{ server_users | rejectattr('state', 'eq', 'absent') | selectattr('ssh_keys', 'defined') | default([]) }}"
-          block:
-            - name: User .ssh directory exists
-              loop: "{{ __user_ssh_accounts }}"
-              loop_control:
-                loop_var: __user_ssh_user
-                label: "{{ __user_ssh_user.username }}"
-              ansible.builtin.file:
-                path: "/home/{{ __user_ssh_user.username }}/.ssh"
-                state: directory
-                mode: 0700
-                owner: "{{ __user_ssh_user.username }}"
-                group: "{{ __user_ssh_user.group | default(__user_ssh_user.username) }}"
-
-            - name: User ssh key(s) are installed
-              loop: "{{ __user_ssh_accounts }}"
-              loop_control:
-                loop_var: __user_ssh_user
-                label: "{{ __user_ssh_user.username }}"
-              ansible.posix.authorized_key:
-                user: "{{ __user_ssh_user.username }}"
-                key: "{{ __user_ssh_user.ssh_keys | join('\n') }}"
-                state: present
-                exclusive: true
-
-        - name: User has sudo access (all commands)
-          loop: >-
-            {{
-              __user_managed_accounts | selectattr('admin', 'defined')
-              | rejectattr('state', 'eq', 'absent') | selectattr('admin', 'eq', true)
-            }}
-          loop_control:
-            loop_var: __user_sudo_user
-            label: "{{ __user_sudo_user.username }}"
-          ansible.builtin.template:
-            src: templates/etc/sudoers.d/50-user.j2
-            dest: /etc/sudoers.d/50-{{ __user_sudo_user.username }}-all
-
-        - name: User does not have sudo access
-          loop: >-
-            {{
-              __user_managed_accounts | selectattr('admin', 'defined') | rejectattr('admin', 'eq', true)
-            }}
-          loop_control:
-            loop_var: __user_no_sudo_user
-            label: "{{ __user_no_sudo_user.username }}"
-          ansible.builtin.file:
-            path: /etc/sudoers.d/50-{{ __user_no_sudo_user.username }}-all
-            state: absent
+    - name: Manage robot user customizations
+      vars:
+        __user_robot_accounts: "{{ __user_present_accounts | selectattr('username', 'eq', 'robot') | list }}"
+      ansible.builtin.include_tasks: robot.yml
 

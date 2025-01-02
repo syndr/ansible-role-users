@@ -6,14 +6,40 @@ driver:
   name: default
   options:
     managed: true
-    login_cmd_template: 'docker exec -ti {instance} bash'
+    login_cmd_template: 'docker exec -ti {instance} bash --login'
 platforms:
-  - name: role-users-docker
+  - name: role-users-docker-rocky9
     type: docker
     image: geerlingguy/docker-rockylinux9-ansible:latest
     systemd: True
     modify_image: False
     privileged: False
+    hostvars:
+      ci_ssh_port: 2022
+  - name: role-users-docker-fedora41
+    type: docker
+    image: geerlingguy/docker-fedora41-ansible:latest
+    systemd: True
+    modify_image: False
+    privileged: False
+    hostvars:
+      ci_ssh_port: 2023
+  - name: role-users-docker-amazonlinux2023
+    type: docker
+    image: geerlingguy/docker-amazonlinux2023-ansible:latest
+    systemd: True
+    modify_image: False
+    privileged: False
+    hostvars:
+      ci_ssh_port: 2024
+  - name: role-users-docker-ubuntu2404
+    type: docker
+    image: geerlingguy/docker-ubuntu2404-ansible:latest
+    systemd: True
+    modify_image: False
+    privileged: False
+    hostvars:
+      ci_ssh_port: 2025
 provisioner:
   name: ansible
   log: True
@@ -29,6 +55,13 @@ provisioner:
     defaults:
       gathering: explicit
       verbosity: ${ANSIBLE_VERBOSITY:-0}
+  env:
+    ARA_API_CLIENT: ${ARA_API_CLIENT:-'http'}
+    ARA_API_SERVER: ${ARA_API_SERVER:-'http://localhost:8000'}
+    ARA_DEFAULT_LABELS: ${ARA_DEFAULT_LABELS:-'testing,molecule'}
+    # To use Ara with molecule:
+    #  export the ANSIBLE_CALLBACK_PLUGINS env var with the output of 'python3 -m ara.setup.callback_plugins'
+    ANSIBLE_CALLBACK_PLUGINS: ${ANSIBLE_CALLBACK_PLUGINS}
 scenario:
   create_sequence:
     - dependency

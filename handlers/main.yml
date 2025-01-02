@@ -1,2 +1,8 @@
 ---
 # handlers file for users
+
+- name: Show archived users
+  when: __user_moveuser_result.changed
+  debug:
+    msg: "{{ __user_moveuser_result.stdout.split('\n') }}"
+

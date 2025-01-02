@@ -1,0 +1,37 @@
+---
+# Manage user sudo access
+#
+# Expected variables:
+#   __user_managed_accounts: A list of user accounts to manage
+#
+
+- name: User has sudo access (all commands)
+  loop: >-
+    {{
+      __user_managed_accounts | selectattr('admin', 'defined')
+      | rejectattr('state', 'eq', 'absent') | selectattr('admin', 'eq', true)
+    }}
+  loop_control:
+    loop_var: __user_sudo_user
+    label: "{{ __user_sudo_user.username }}"
+  become: true
+  ansible.builtin.template:
+    src: templates/etc/sudoers.d/50-user.j2
+    dest: /etc/sudoers.d/50-{{ __user_sudo_user.username }}-all
+    owner: root
+    group: root
+    mode: "0660"
+
+- name: User does not have sudo access
+  loop: >-
+    {{
+      __user_managed_accounts | selectattr('admin', 'defined') | rejectattr('admin', 'eq', true)
+    }}
+  loop_control:
+    loop_var: __user_no_sudo_user
+    label: "{{ __user_no_sudo_user.username }}"
+  become: true
+  ansible.builtin.file:
+    path: /etc/sudoers.d/50-{{ __user_no_sudo_user.username }}-all
+    state: absent
+

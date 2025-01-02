@@ -1,0 +1,50 @@
+---
+# Manage user groups
+#
+# Expected variables:
+#   __user_present_accounts: A list of user accounts that should exist
+#   __user_absent_accounts: A list of user accounts that should not exist
+#
+
+- name: Manage user groups
+  vars:
+    __user_primary_groups_defined: >
+      {{
+        __user_present_accounts
+        | selectattr('group', 'defined')
+        | map(attribute='group')
+        | unique | default([])
+      }}
+    __user_primary_groups_default: >
+      {{
+        __user_present_accounts
+        | rejectattr('group', 'defined')
+        | map(attribute='username')
+        | unique | default([])
+      }}
+    __user_secondary_groups: >
+      {{
+        __user_present_accounts | selectattr('groups', 'defined') |
+        map(attribute='groups') | flatten | unique | default([])
+      }}
+  become: true
+  block:
+    - name: User group exists
+      loop: "{{ __user_primary_groups_defined + __user_primary_groups_default + __user_secondary_groups }}"
+      loop_control:
+        loop_var: __user_group
+      ansible.builtin.group:
+        name: "{{ __user_group }}"
+      when: __user_group.state | default('present') == 'present'
+
+- name: Absent user primary group does not exist
+  loop: >
+    {{
+      __user_absent_accounts | selectattr('group', 'defined') | map(attribute='group') | unique
+    }}
+  loop_control:
+    loop_var: __user_absent_account
+  ansible.builtin.group:
+    name: "{{ __user_absent_account.username }}"
+    state: absent
+

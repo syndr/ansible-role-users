@@ -56,12 +56,36 @@
             group: root
             mode: 0600
 
+    - name: Collect system information
+      ansible.builtin.setup:
+        gather_subset:
+          - '!all'
+          - '!min'
+          - distribution
+          - virtualization_type
+
+    - name: Refresh package cache (apt)
+      when: ansible_distribution_file_variety | lower == 'debian'
+      become: true
+      ansible.builtin.apt:
+        update_cache: true
+
     - name: Install system utilities
       become: true
+      vars:
+        __openssh_client_name: "{{ 'openssh-client' if ansible_distribution_file_variety | lower == 'debian' else 'openssh-clients' }}"
       ansible.builtin.package:
         name:
-          - openssh
+          - "{{ __openssh_client_name }}"
+          - openssh-server
+          - openssl
+          - acl
         state: present
+
+
+    - name: Show distribution file variety
+      ansible.builtin.debug:
+        var: ansible_distribution_file_variety
 
     - name: Generate creds for this test
       block:
@@ -85,12 +109,18 @@
             src: /tmp/testuser.pub
           register: testuser_pubkey_b64
 
+        - name: Load ssh private key
+          ansible.builtin.slurp:
+            src: /tmp/testuser
+          register: testuser_privkey_b64
+
         - name: Define vars
           ansible.builtin.set_fact:
             user_creds:
               testadmin_pw: "{{ testadmin_pwgen_raw.stdout | trim }}"
               testadmin_pw_hash: "{{ testadmin_pwhash_raw.stdout | trim }}"
               testuser_pubkey: "{{ testuser_pubkey_b64.content | b64decode }}"
+              testuser_privkey: "{{ testuser_privkey_b64.content | b64decode }}"
 
         - name: Save vars to host (for idempotence)
           become: true
@@ -110,4 +140,50 @@
                 owner: root
                 group: root
                 mode: 0644
+
+    - name: Configure SSH server
+      become: true
+      vars:
+        ssh_logon_user: molecule_runner
+      block:
+        - name: Configure an ssh server
+          block:
+            - name: Set openssh port
+              when: ansible_virtualization_type == 'docker'
+              ansible.builtin.copy:
+                content: |
+                  Port {{ ci_ssh_port | default(22) }}
+                dest: /etc/ssh/sshd_config.d/90-port.conf
+                owner: root
+                group: root
+                mode: 0644
+
+            - name: SSH Server is running
+              ansible.builtin.systemd_service:
+                name: "{{ 'ssh' if ansible_distribution_file_variety | lower == 'debian' else 'sshd' }}"
+                state: started
+                enabled: true
+
+        - name: User .ssh directory exists
+          ansible.builtin.file:
+            path: /home/{{ ssh_logon_user }}/.ssh
+            state: directory
+            owner: "{{ ssh_logon_user }}"
+            group: "{{ ssh_logon_user }}"
+            mode: 0700
+
+        - name: Test user has priv key
+          ansible.builtin.copy:
+            src: /tmp/testuser
+            dest: /home/{{ ssh_logon_user }}/.ssh/id_rsa
+            remote_src: true
+            owner: "{{ ssh_logon_user }}"
+            group: "{{ ssh_logon_user }}"
+            mode: 0600
+
+    - name: Allow user logon
+      become: true
+      ansible.builtin.file:
+        path: /run/nologin
+        state: absent
 

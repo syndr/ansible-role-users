@@ -1,0 +1,46 @@
+---
+# Manage user SSH configuration
+#
+# Expected variables:
+#   __user_ssh_accounts: A list of user accounts that should have SSH keys
+#
+
+- name: User .ssh directory exists
+  loop: "{{ __user_ssh_accounts }}"
+  loop_control:
+    loop_var: __user_ssh_user
+    label: "{{ __user_ssh_user.username }}"
+  become: true
+  ansible.builtin.file:
+    path: "/home/{{ __user_ssh_user.username }}/.ssh"
+    state: directory
+    owner: "{{ __user_ssh_user.username }}"
+    group: "{{ __user_ssh_user.group | default(__user_ssh_user.username) }}"
+    mode: "0700"
+
+- name: User ssh authorized key(s) are installed
+  loop: "{{ __user_ssh_accounts | selectattr('ssh_keys', 'defined') }}"
+  loop_control:
+    loop_var: __user_ssh_user
+    label: "{{ __user_ssh_user.username }}"
+  become: true
+  ansible.posix.authorized_key:
+    user: "{{ __user_ssh_user.username }}"
+    key: "{{ __user_ssh_user.ssh_keys | join('\n') }}"
+    state: present
+    exclusive: true
+
+- name: User ssh private key is installed
+  loop: "{{ __user_ssh_accounts | selectattr('ssh_private_key', 'defined') }}"
+  loop_control:
+    loop_var: __user_ssh_user
+    label: "{{ __user_ssh_user.username }}"
+  become: true
+  ansible.builtin.copy:
+    content: "{{ __user_ssh_user.ssh_private_key }}"
+    dest: "/home/{{ __user_ssh_user.username }}/.ssh/id_{{ __user_ssh_user.ssh_key_type | default('ed25519') }}"
+    owner: "{{ __user_ssh_user.username }}"
+    group: "{{ __user_ssh_user.group | default(__user_ssh_user.username) }}"
+    mode: "0600"
+    backup: true
+

@@ -3,5 +3,7 @@
 collections:
   - name: community.docker
   - name: ansible.posix
-  - name: syndr.molecule
+  - name: git+https://github.com/syndr/ansible-collection-molecule.git
+    type: git
+    version: devel
 
